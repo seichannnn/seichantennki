@@ -96,6 +96,14 @@
             background: transparent;
             border-radius: 2px;
         }
+        /* トースト通知のアニメーション */
+        @keyframes slide-up {
+            from { transform: translateY(100%); opacity: 0; }
+            to { transform: translateY(0); opacity: 1; }
+        }
+        .animate-slide-up {
+            animation: slide-up 0.3s ease-out forwards;
+        }
     </style>
 </head>
 <body>
@@ -104,7 +112,7 @@
     <script type="text/babel" data-type="module">
         import React, { useState, useEffect, useRef } from 'react';
         import { createRoot } from 'react-dom/client';
-        import { Search, Wind, MapPin, Calendar, Sun, Cloud, CloudRain, CloudSnow, CloudLightning, CloudFog, Loader2, Thermometer, LocateFixed, Droplets, User, Star, X, Sparkles, Map as MapIcon, CloudRain as RadarIcon, Play, Pause, Umbrella, Sunrise, Sunset, Clock, ArrowUp, ArrowDown, AlertTriangle } from 'lucide-react';
+        import { Search, Wind, MapPin, Calendar, Sun, Cloud, CloudRain, CloudSnow, CloudLightning, CloudFog, Loader2, Thermometer, LocateFixed, Droplets, User, Star, X, Sparkles, Map as MapIcon, CloudRain as RadarIcon, Play, Pause, Umbrella, Sunrise, Sunset, Clock, ArrowUp, ArrowDown, AlertTriangle, Share2, Check } from 'lucide-react';
 
         // 雨雲レーダーコンポーネント
         const RadarMap = ({ lat, lon }) => {
@@ -303,6 +311,7 @@
             const [favorites, setFavorites] = useState([]);
             const [viewMode, setViewMode] = useState('weather');
             const [coords, setCoords] = useState({ lat: 35.6895, lon: 139.6917 });
+            const [shareToast, setShareToast] = useState(false);
 
             const getWeatherIcon = (code) => {
                 if (code === 0) return { icon: <Sun className="w-full h-full text-yellow-300 animate-spin-slow drop-shadow-md" />, label: '快晴', bg: 'from-orange-400 via-amber-300 to-yellow-200', text: 'text-yellow-100', accent: 'bg-yellow-400/30' };
@@ -314,7 +323,7 @@
                 if (code >= 85 && code <= 86) return { icon: <CloudSnow className="w-full h-full text-white drop-shadow-md" />, label: '雪', bg: 'from-gray-500 via-gray-300 to-white', text: 'text-gray-100', accent: 'bg-gray-400/30' };
                 if (code >= 95 && code <= 99) return { icon: <CloudLightning className="w-full h-full text-yellow-300 drop-shadow-md" />, label: '雷雨', bg: 'from-slate-900 via-purple-900 to-slate-700', text: 'text-yellow-200', accent: 'bg-yellow-500/20' };
                 
-                return { icon: <Cloud className="w-full h-full text-gray-200" />, label: '不明', bg: 'from-blue-400 to-blue-200', text: 'text-white', accent: 'bg-white/20' };
+                return { icon: <Cloud className="w-full h-full text-gray-200" />, label: '不明', text: 'text-white' };
             };
 
             // ⚠️ 気象情報を判定する関数
@@ -323,31 +332,24 @@
                 const alerts = [];
                 const { weathercode, windspeed, temperature } = current;
 
-                // 濃霧 (Fog)
                 if (weathercode === 45 || weathercode === 48) {
                     alerts.push({ level: 'caution', message: '濃霧注意: 視界が悪くなっています', color: 'bg-gray-600/80' });
                 }
-                // 雷 (Thunderstorm)
                 if (weathercode >= 95) {
                     alerts.push({ level: 'warning', message: '雷注意: 落雷や突風に警戒してください', color: 'bg-yellow-600/80' });
                 }
-                // 激しい雨 (Heavy Rain)
                 if (weathercode === 65 || weathercode === 67 || weathercode === 81 || weathercode === 82) {
                     alerts.push({ level: 'warning', message: '大雨注意: 激しい雨が降っています', color: 'bg-blue-700/80' });
                 }
-                // 大雪 (Heavy Snow)
                 if (weathercode === 75 || weathercode === 77 || weathercode === 85 || weathercode === 86) {
                     alerts.push({ level: 'warning', message: '大雪注意: 積雪や路面凍結に注意', color: 'bg-cyan-700/80' });
                 }
-                // 強風 (Strong Wind) 目安: 40km/h以上
                 if (windspeed >= 40) {
                     alerts.push({ level: 'caution', message: '強風注意: 風が強くなっています', color: 'bg-orange-600/80' });
                 }
-                // 猛暑 (Heatstroke)
                 if (temperature >= 35) {
                     alerts.push({ level: 'warning', message: '猛暑警戒: 熱中症に十分注意してください', color: 'bg-red-600/80' });
                 }
-                // 凍結 (Freezing)
                 if (temperature <= 0) {
                     alerts.push({ level: 'caution', message: '凍結注意: 路面の凍結に注意してください', color: 'bg-sky-600/80' });
                 }
@@ -406,7 +408,6 @@
                 const weatherData = await weatherRes.json();
 
                 if (weatherData.error) {
-                    console.error("Open-Meteo API Error:", weatherData.reason);
                     throw new Error("API Error: " + weatherData.reason);
                 }
 
@@ -466,14 +467,48 @@
                 );
             };
 
+            // URLパラメータのチェック
             useEffect(() => {
-                const savedCity = localStorage.getItem('weatherAppLastCity');
-                fetchWeather(savedCity || 'Tokyo');
+                const params = new URLSearchParams(window.location.search);
+                const cityParam = params.get('city');
+
+                if (cityParam) {
+                    fetchWeather(cityParam);
+                } else {
+                    const savedCity = localStorage.getItem('weatherAppLastCity');
+                    fetchWeather(savedCity || 'Tokyo');
+                }
+
                 const savedFavorites = localStorage.getItem('weatherAppFavorites');
                 if (savedFavorites) {
-                setFavorites(JSON.parse(savedFavorites));
+                    setFavorites(JSON.parse(savedFavorites));
                 }
             }, []);
+
+            // 共有機能
+            const handleShare = () => {
+                if (!weatherData) return;
+                
+                // URLを生成
+                const url = new URL(window.location.href);
+                url.searchParams.set('city', weatherData.city);
+                const shareUrl = url.toString();
+
+                // クリップボードにコピー (iframe対策でexecCommand使用)
+                const textArea = document.createElement("textarea");
+                textArea.value = shareUrl;
+                document.body.appendChild(textArea);
+                textArea.select();
+                try {
+                    document.execCommand('copy');
+                    setShareToast(true);
+                    setTimeout(() => setShareToast(false), 3000); // 3秒後に消える
+                } catch (err) {
+                    console.error('コピーに失敗しました', err);
+                    setError('URLのコピーに失敗しました');
+                }
+                document.body.removeChild(textArea);
+            };
 
             const toggleFavorite = () => {
                 if (!weatherData) return;
@@ -547,7 +582,6 @@
 
             const bgGradient = getTimeBasedGradient();
             const isFavorite = weatherData && favorites.includes(weatherData.city);
-            // アラート情報の取得
             const currentAlerts = weatherData ? getWeatherAlerts(weatherData.current) : [];
 
             return (
@@ -791,6 +825,17 @@
                                                 </div>
                                             </div>
                                         </div>
+
+                                        {/* Share Button (Bottom of content) */}
+                                        <div className="mt-6 mb-8 px-4 flex justify-center">
+                                            <button 
+                                                onClick={handleShare}
+                                                className="group flex items-center space-x-2 bg-white/20 hover:bg-white/30 text-white px-6 py-3 rounded-full font-bold transition-all shadow-lg active:scale-95 backdrop-blur-md border border-white/20"
+                                            >
+                                                <Share2 className="w-5 h-5" />
+                                                <span>この天気を共有</span>
+                                            </button>
+                                        </div>
                                     </>
                                 ) : (
                                     /* レーダーモード */
@@ -823,6 +868,15 @@
                         )}
                     </div>
                 </div>
+
+                {/* Toast Notification */}
+                {shareToast && (
+                    <div className="fixed bottom-10 left-1/2 transform -translate-x-1/2 bg-black/80 text-white px-6 py-3 rounded-full flex items-center shadow-2xl backdrop-blur-md animate-slide-up z-50 border border-white/10">
+                        <Check className="w-5 h-5 text-green-400 mr-2" />
+                        <span className="font-bold text-sm">リンクをコピーしました</span>
+                    </div>
+                )}
+
                 </div>
             );
         }

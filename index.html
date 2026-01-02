@@ -161,7 +161,7 @@
     <script type="text/babel" data-type="module">
         import React, { useState, useEffect, useRef } from 'react';
         import { createRoot } from 'react-dom/client';
-        import { Search, Wind, MapPin, Calendar, Sun, Cloud, CloudRain, CloudSnow, CloudLightning, CloudFog, Loader2, Thermometer, LocateFixed, Droplets, User, Star, X, Sparkles, Map as MapIcon, CloudRain as RadarIcon, Play, Pause, Umbrella, Sunrise, Sunset, Clock, ArrowUp, ArrowDown, AlertTriangle, Share2, Check, Navigation, Shirt, Activity, Gauge, Eye, Volume2, VolumeX, Mic, MicOff, MessageSquare, Moon, Globe, Layers, Mountain, Settings } from 'lucide-react';
+        import { Search, Wind, MapPin, Calendar, Sun, Cloud, CloudRain, CloudSnow, CloudLightning, CloudFog, Loader2, Thermometer, LocateFixed, Droplets, User, Star, X, Sparkles, Map as MapIcon, CloudRain as RadarIcon, Play, Pause, Umbrella, Sunrise, Sunset, Clock, ArrowUp, ArrowDown, AlertTriangle, Share2, Check, Navigation, Shirt, Activity, Gauge, Eye, Volume2, VolumeX, Mic, MicOff, MessageSquare, Moon, Globe, Layers, Mountain, Settings, History, HelpCircle } from 'lucide-react';
 
         // --- 天候エフェクトコンポーネント ---
         const WeatherEffects = ({ weathercode }) => {
@@ -212,10 +212,9 @@
             const [isPlaying, setIsPlaying] = useState(false);
             const [apiHost, setApiHost] = useState('https://tile.cache.rainviewer.com');
             const [isForecast, setIsForecast] = useState(false);
-            
-            // Map Settings
-            const [baseMap, setBaseMap] = useState('standard'); // standard, satellite, terrain, dark
-            const [radarColor, setRadarColor] = useState(1); // 1:Original, 2:Universal Blue, 3:TITAN, 4:TWC, 5:Meteored, 6:NEXRAD, 7:RAINBOW, 8:DarkSky
+            const [mapType, setMapType] = useState('radar');
+            const [baseMap, setBaseMap] = useState('standard');
+            const [radarColor, setRadarColor] = useState(1);
             const [radarSmooth, setRadarSmooth] = useState(true);
             const [radarSnow, setRadarSnow] = useState(false);
             const [isMenuOpen, setIsMenuOpen] = useState(false);
@@ -223,7 +222,6 @@
             useEffect(() => {
                 if (!mapRef.current) return;
 
-                // Base Map URLs
                 const baseMaps = {
                     standard: { url: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', attr: '&copy; OSM' },
                     satellite: { url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', attr: 'Tiles &copy; Esri' },
@@ -308,15 +306,12 @@
                 if (!frame) return;
 
                 const isFuture = currentFrameIndex >= pastCount;
-                setIsForecast(isFuture);
+                setIsForecast(isForecast);
 
                 if (radarLayerRef.current) {
                     mapInstanceRef.current.removeLayer(radarLayerRef.current);
                 }
 
-                // RainViewer Options: {color}/{smooth}_{snow}.png
-                // smooth: 1 (on), 0 (off)
-                // snow: 1 (on), 0 (off)
                 const options = `${radarSmooth ? '1' : '0'}_${radarSnow ? '1' : '0'}`;
                 const layerUrl = `${apiHost}${frame.path}/256/{z}/{x}/{y}/${radarColor}/${options}.png`;
 
@@ -353,7 +348,6 @@
 
             const nowPositionPercent = frames.length > 1 ? ((pastCount - 1) / (frames.length - 1)) * 100 : 0;
 
-            // マップ設定メニュー
             const MapSettings = () => (
                 <div className="absolute top-12 right-2 z-[400] bg-white/90 backdrop-blur-md p-3 rounded-xl shadow-lg border border-gray-200 text-gray-800 text-xs w-48 transition-all animate-in fade-in zoom-in-95 duration-200">
                     <div className="space-y-3">
@@ -397,7 +391,6 @@
                     <div className="flex-1 relative min-h-[400px]">
                         <div ref={mapRef} className="absolute inset-0 w-full h-full z-0" />
                         
-                        {/* 設定ボタン */}
                         <div className="absolute top-2 right-2 z-[400]">
                             <button 
                                 onClick={() => setIsMenuOpen(!isMenuOpen)}
@@ -469,7 +462,7 @@
             );
         };
 
-        // 気温グラフコンポーネント (気温折れ線のみ)
+        // 気温グラフコンポーネント
         const TempGraph = ({ hourly }) => {
             if (!hourly || hourly.time.length === 0) return null;
 
@@ -477,7 +470,6 @@
             const maxTemp = Math.max(...temps) + 2;
             const minTemp = Math.min(...temps) - 2;
             const range = maxTemp - minTemp || 1;
-            // const width = 100; // %
             const height = 60; // px
 
             const points = temps.map((t, i) => {
@@ -521,11 +513,27 @@
             const [error, setError] = useState(null);
             const [searchTerm, setSearchTerm] = useState('');
             const [favorites, setFavorites] = useState([]);
+            const [searchHistory, setSearchHistory] = useState([]); // 検索履歴
+            const [suggestions, setSuggestions] = useState([]); // 検索候補
             const [viewMode, setViewMode] = useState('weather');
             const [coords, setCoords] = useState({ lat: 35.6895, lon: 139.6917 });
             const [shareToast, setShareToast] = useState(false);
             const [isSpeaking, setIsSpeaking] = useState(false);
             const [isListening, setIsListening] = useState(false);
+
+            useEffect(() => {
+                const history = localStorage.getItem('weatherAppSearchHistory');
+                if (history) {
+                    setSearchHistory(JSON.parse(history));
+                }
+            }, []);
+
+            const updateSearchHistory = (newCity) => {
+                let newHistory = [newCity, ...searchHistory.filter(c => c !== newCity)];
+                if (newHistory.length > 5) newHistory = newHistory.slice(0, 5); // 最大5件
+                setSearchHistory(newHistory);
+                localStorage.setItem('weatherAppSearchHistory', JSON.stringify(newHistory));
+            };
 
             const getWeatherIcon = (code) => {
                 if (code === 0) return { icon: <Sun className="w-full h-full text-yellow-300 animate-spin-slow drop-shadow-md" />, label: '快晴', bg: 'from-orange-400 via-amber-300 to-yellow-200', text: 'text-yellow-100' };
@@ -548,33 +556,95 @@
                 return { icon: <User className="w-5 h-5" />, label: 'コート' };
             };
 
+            // 今日のひとこと (バリエーション強化版)
             const getDailyAdvice = (current) => {
                 const { weathercode, temperature, windspeed } = current;
-                if (weathercode >= 95) return "雷が鳴りやすいです。外出は控えめに。";
-                if ([51, 53, 55, 61, 63, 65].includes(weathercode)) return "傘を忘れずに。足元に注意してください。";
-                if (temperature >= 30) return "水分補給をこまめに。熱中症に注意！";
-                if (temperature <= 5) return "冷え込みます。暖かくしてお出かけを。";
-                if (windspeed >= 30) return "風が強いです。帽子が飛ばされないように。";
-                if (weathercode === 0) return "絶好の洗濯日和です！気持ちいいですね。";
-                return "素敵な一日をお過ごしください！";
+                let messages = [];
+
+                // 天気コードに基づくメッセージ
+                if (weathercode === 0) {
+                    messages.push("絶好の洗濯日和です！気持ちいいですね。");
+                    messages.push("サングラスが活躍しそうな日差しです。");
+                    messages.push("外に出て深呼吸したくなるような天気です。");
+                } else if (weathercode >= 1 && weathercode <= 3) {
+                    messages.push("過ごしやすい天気になりそうです。");
+                    messages.push("雲の隙間から青空が見えるかもしれません。");
+                    messages.push("紫外線対策は念のためしておきましょう。");
+                } else if ([45, 48].includes(weathercode)) {
+                    messages.push("霧が出ています。運転には十分ご注意を。");
+                    messages.push("視界が悪くなっています。ライトの点灯を。");
+                } else if ([51, 53, 55, 61, 63, 65, 80, 81, 82].includes(weathercode)) {
+                    messages.push("傘を忘れずに。足元に注意してください。");
+                    messages.push("雨音を聴きながらリラックスするのも良いですね。");
+                    messages.push("お気に入りのレイングッズで気分を上げましょう！");
+                    messages.push("防水の靴でお出かけするのがおすすめです。");
+                } else if ([71, 73, 75, 77, 85, 86].includes(weathercode)) {
+                    messages.push("雪が降るかもしれません。暖かくしてください。");
+                    messages.push("路面凍結に注意してください。ペンギン歩きで！");
+                    messages.push("雪景色が楽しめるかもしれませんね。");
+                } else if (weathercode >= 95) {
+                    messages.push("雷が鳴りやすいです。外出は控えめに。");
+                    messages.push("急な天気の変化に備えて、安全な場所に。");
+                    messages.push("パソコンなどの電子機器の電源にも注意を。");
+                }
+
+                // 気温に基づくメッセージ
+                if (temperature >= 35) {
+                    messages.push("危険な暑さです。不要な外出は避けましょう。");
+                    messages.push("エアコンを適切に使って命を守りましょう。");
+                } else if (temperature >= 30) {
+                    messages.push("水分補給をこまめに。熱中症に注意！");
+                    messages.push("アイスクリームが最高に美味しい気温ですね！");
+                    messages.push("日陰を選んで歩くようにしましょう。");
+                } else if (temperature >= 20 && temperature < 30) {
+                    messages.push("半袖で気持ちよく過ごせそうです。");
+                    messages.push("冷たい飲み物が美味しい気温ですね！");
+                } else if (temperature >= 15 && temperature < 20) {
+                    messages.push("過ごしやすい陽気です。お散歩はいかが？");
+                    messages.push("薄手の上着があると安心かもしれません。");
+                } else if (temperature >= 10 && temperature < 15) {
+                    messages.push("少し肌寒いです。温かい飲み物でホッと一息。");
+                    messages.push("ジャケットやコートの出番です。");
+                } else if (temperature >= 5 && temperature < 10) {
+                    messages.push("コートとマフラーでしっかり防寒を。");
+                    messages.push("鍋料理が恋しくなる気温ですね。");
+                } else if (temperature < 5) {
+                    messages.push("冷え込みます。暖かくしてお出かけを。");
+                    messages.push("カイロを持っていると安心かもしれません。");
+                    messages.push("手袋と帽子で完全防備をおすすめします。");
+                }
+
+                // 風速に基づくメッセージ
+                if (windspeed >= 30) {
+                    messages.push("風が強いです。帽子が飛ばされないように。");
+                    messages.push("洗濯物が飛ばされないようしっかり固定を！");
+                    messages.push("髪型が崩れやすいかもしれません。");
+                }
+
+                // デフォルト
+                if (messages.length === 0) {
+                    messages.push("素敵な一日をお過ごしください！");
+                    messages.push("今日も一日頑張りましょう！");
+                    messages.push("空を見上げてリフレッシュ！");
+                }
+
+                // ランダムに1つ選択
+                const randomIndex = Math.floor(Math.random() * messages.length);
+                return messages[randomIndex];
             };
 
-            // 生活指数 (Life Index) の計算
             const getLifeIndices = (current) => {
                 const { weathercode, humidity, windspeed, temperature } = current;
                 const isRainy = [51, 53, 55, 61, 63, 65, 80, 81, 82, 95, 96, 99].includes(weathercode);
                 
-                // 洗濯
                 let laundry = { label: 'OK', color: 'text-green-300', icon: <Sun className="w-4 h-4"/> };
                 if (isRainy) laundry = { label: '不可', color: 'text-red-300', icon: <CloudRain className="w-4 h-4"/> };
                 else if (humidity > 70) laundry = { label: '乾きにくい', color: 'text-yellow-300', icon: <Cloud className="w-4 h-4"/> };
 
-                // 傘
                 let umbrella = { label: '不要', color: 'text-green-300', icon: <Sun className="w-4 h-4"/> };
                 if (isRainy) umbrella = { label: '必要', color: 'text-red-300', icon: <Umbrella className="w-4 h-4"/> };
                 else if (weathercode >= 1 && weathercode <= 3) umbrella = { label: '折りたたみ', color: 'text-yellow-300', icon: <Cloud className="w-4 h-4"/> };
 
-                // 乾燥肌
                 let skin = { label: '快適', color: 'text-green-300' };
                 if (humidity < 30) skin = { label: '警戒', color: 'text-red-300' };
                 else if (humidity < 50) skin = { label: '注意', color: 'text-yellow-300' };
@@ -632,27 +702,81 @@
                 return alerts;
             };
 
-            const fetchWeather = async (cityName) => {
+            // 拡張されたfetchWeather関数
+            const fetchWeather = async (cityName, isSuggestion = false) => {
                 setLoading(true);
                 setError(null);
+                setSuggestions([]); // リセット
                 try {
-                    const geoUrl = `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(cityName)}&count=1&language=ja&format=json`;
+                    // 候補を多く取得 (count=10)
+                    const geoUrl = `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(cityName)}&count=10&language=ja&format=json`;
                     const geoRes = await fetch(geoUrl);
                     const geoData = await geoRes.json();
                 
-                    if (!geoData.results || geoData.results.length === 0) throw new Error('見つかりませんでした');
-                
-                    const { latitude, longitude, name } = geoData.results[0];
+                    if (!geoData.results || geoData.results.length === 0) {
+                        throw new Error('見つかりませんでした');
+                    }
+
+                    // 候補がある場合
+                    const topResult = geoData.results[0];
+                    
+                    // ユーザーの要望: 天気が表示されるときは「もしかして？」を出さない。
+                    // なので、成功パターンでは suggestions をセットしない。
+                    // もし「見つかりませんでした（＝topResultが取得できない）」レベルのエラーハンドリングを強化するなら別だが、
+                    // 現状のAPI仕様では results があれば成功扱い。
+                    
+                    // const otherCandidates = geoData.results.slice(1);
+                    // if (otherCandidates.length > 0) {
+                    //    setSuggestions(otherCandidates);
+                    // }
+                    // ↑ これを削除（コメントアウト）して、成功時は候補を出さないようにする。
+
+                    const { latitude, longitude, name } = topResult;
+                    
+                    // 名前表示用: 県名や国名も考慮
+                    let displayName = name;
+                    if (topResult.admin1) displayName += `, ${topResult.admin1}`;
+                    else if (topResult.country) displayName += `, ${topResult.country}`;
+
                     await Promise.all([
-                        fetchWeatherCommon(latitude, longitude, name),
+                        fetchWeatherCommon(latitude, longitude, displayName),
                         fetchAirQuality(latitude, longitude)
                     ]);
+                    
+                    updateSearchHistory(name);
                 
                 } catch (err) {
                     setError(err.message);
                     setLoading(false);
                 }
             };
+
+            // 候補をクリックしたときの処理
+            const handleSuggestionClick = async (candidate) => {
+                setLoading(true);
+                setError(null);
+                setSuggestions([]); // 選択したら候補を消す
+                setSearchTerm(candidate.name); // 検索バーも更新
+                try {
+                    const { latitude, longitude, name, admin1, country } = candidate;
+                    
+                    let displayName = name;
+                    if (admin1) displayName += `, ${admin1}`;
+                    else if (country) displayName += `, ${country}`;
+
+                    await Promise.all([
+                        fetchWeatherCommon(latitude, longitude, displayName),
+                        fetchAirQuality(latitude, longitude)
+                    ]);
+                    
+                    updateSearchHistory(name);
+
+                } catch (err) {
+                    setError('情報の取得に失敗しました');
+                    setLoading(false);
+                }
+            };
+
 
             const fetchWeatherByCoords = async (latitude, longitude) => {
                 setLoading(true);
@@ -985,12 +1109,12 @@
                         <div className="mb-6">
                             <form onSubmit={handleSearch} className="relative flex items-center gap-2 md:gap-3 group mb-4">
                                 <div className="relative flex-1">
-                                    <div className="absolute inset-0 bg-white/30 rounded-full blur-md group-hover:bg-white/50 transition-all duration-300"></div>
-                                    <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 text-white/70 w-5 h-5 z-20" />
+                                    <div className="absolute inset-0 bg-white/90 rounded-full blur-md group-hover:bg-white transition-all duration-300 shadow-sm"></div>
+                                    <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 text-gray-500 w-5 h-5 z-20" />
                                     <input
                                         type="text"
-                                        placeholder="都市名..."
-                                        className="w-full pl-12 pr-12 py-3 rounded-full bg-white/20 border border-white/30 focus:border-white/80 focus:bg-white/30 focus:ring-2 focus:ring-white/50 outline-none text-white placeholder-white/60 transition-all duration-300 shadow-lg backdrop-blur-sm font-bold relative z-10"
+                                        placeholder="都市名を入力..."
+                                        className="w-full pl-12 pr-12 py-3 rounded-full bg-white/90 border border-white/50 focus:border-white focus:bg-white focus:ring-2 focus:ring-blue-400 outline-none text-gray-800 placeholder-gray-400 transition-all duration-300 shadow-lg backdrop-blur-md font-bold relative z-10"
                                         value={searchTerm}
                                         onChange={(e) => setSearchTerm(e.target.value)}
                                     />
@@ -998,7 +1122,7 @@
                                     <button 
                                         type="button" 
                                         onClick={handleVoiceSearch} 
-                                        className={`absolute right-2 top-1/2 transform -translate-y-1/2 p-2 rounded-full z-20 hover:bg-white/20 transition-colors ${isListening ? 'text-red-400 animate-pulse' : 'text-white/70'}`}
+                                        className={`absolute right-2 top-1/2 transform -translate-y-1/2 p-2 rounded-full z-20 hover:bg-gray-100 transition-colors ${isListening ? 'text-red-500 animate-pulse' : 'text-gray-500'}`}
                                     >
                                         <Mic className="w-5 h-5" />
                                     </button>
@@ -1006,6 +1130,43 @@
                                 <button type="submit" className="bg-white/20 hover:bg-white/40 text-white p-3 rounded-full shadow-lg hover:shadow-white/20 backdrop-blur-md" disabled={loading}><Loader2 className={`w-5 h-5 ${loading ? 'animate-spin' : 'hidden'}`} /><Search className={`w-5 h-5 stroke-[3px] ${loading ? 'hidden' : ''}`} /></button>
                                 <button type="button" onClick={handleCurrentLocation} className="bg-white/20 hover:bg-white/40 text-white p-3 rounded-full shadow-lg hover:shadow-white/20 backdrop-blur-md" disabled={loading}><LocateFixed className="w-5 h-5 stroke-[3px]" /></button>
                             </form>
+
+                            {/* もしかしてここ？ (Suggestions) */}
+                            {suggestions.length > 0 && (
+                                <div className="mb-4 animate-in fade-in slide-in-from-top-4 duration-300">
+                                    <div className="bg-white/90 backdrop-blur-md rounded-2xl p-3 shadow-lg border border-white/50">
+                                        <p className="text-xs font-bold text-gray-500 mb-2 flex items-center"><HelpCircle className="w-3 h-3 mr-1" /> もしかしてここ？</p>
+                                        <div className="flex gap-2 overflow-x-auto scrollbar-hide pb-1">
+                                            {suggestions.map((cand, idx) => (
+                                                <button
+                                                    key={idx}
+                                                    onClick={() => handleSuggestionClick(cand)}
+                                                    className="flex-shrink-0 px-3 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-600 rounded-lg text-xs font-bold transition-colors border border-blue-100"
+                                                >
+                                                    {cand.name}
+                                                    {cand.admin1 && <span className="text-[10px] text-gray-400 ml-1">({cand.admin1})</span>}
+                                                </button>
+                                            ))}
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* 検索履歴 (Search History) */}
+                            {searchHistory.length > 0 && (
+                                <div className="flex gap-2 mb-2 overflow-x-auto scrollbar-hide pb-2">
+                                    {searchHistory.map((hist, idx) => (
+                                        <button
+                                            key={idx}
+                                            onClick={() => fetchWeather(hist)}
+                                            className="flex items-center space-x-1 px-3 py-1 bg-white/10 hover:bg-white/20 rounded-full text-xs font-bold text-white border border-white/10 transition-colors whitespace-nowrap"
+                                        >
+                                            <History className="w-3 h-3" />
+                                            <span>{hist}</span>
+                                        </button>
+                                    ))}
+                                </div>
+                            )}
 
                             {favorites.length > 0 && (
                                 <div className="flex flex-wrap gap-2 mb-4">
@@ -1190,6 +1351,12 @@
                                                 <span>共有</span>
                                             </button>
                                         </div>
+
+                                        {/* Footer / Credit */}
+                                        <footer className="mt-8 mb-4 text-center space-y-1">
+                                            <p className="text-[10px] text-white/50 font-bold tracking-widest uppercase">Created by seichan</p>
+                                            <p className="text-[10px] text-white/50 font-bold tracking-widest uppercase">SuperThanks Gemini</p>
+                                        </footer>
                                     </>
                                 ) : (
                                     /* レーダーモード: 高さ固定で表示 */

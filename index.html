@@ -58,7 +58,7 @@
         .text-glow {
             text-shadow: 0 0 10px rgba(255,255,255,0.7);
         }
-        /* スクロールバー非表示（横スクロール用） */
+        /* スクロールバー非表示 */
         .scrollbar-hide::-webkit-scrollbar {
             display: none;
         }
@@ -104,12 +104,54 @@
         .animate-slide-up {
             animation: slide-up 0.3s ease-out forwards;
         }
-        /* 波紋アニメーション */
+        /* 波紋アニメーション（音声再生時） */
         @keyframes ping-slow {
             75%, 100% { transform: scale(2); opacity: 0; }
         }
         .animate-ping-slow {
             animation: ping-slow 2s cubic-bezier(0, 0, 0.2, 1) infinite;
+        }
+
+        /* 雨のエフェクト */
+        .rain {
+            position: absolute;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 5;
+            pointer-events: none;
+        }
+        .rain-drop {
+            position: absolute;
+            bottom: 100%;
+            width: 1px;
+            height: 20px;
+            background: linear-gradient(to bottom, rgba(255,255,255,0), rgba(255,255,255,0.5));
+            animation: fall linear infinite;
+        }
+        @keyframes fall {
+            to { transform: translateY(100vh); }
+        }
+
+        /* 雪のエフェクト */
+        .snow {
+            position: absolute;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 5;
+            pointer-events: none;
+        }
+        .snow-flake {
+            position: absolute;
+            top: -10px;
+            background: white;
+            border-radius: 50%;
+            opacity: 0.8;
+            animation: snowfall linear infinite;
+        }
+        @keyframes snowfall {
+            to { transform: translateY(100vh) rotate(360deg); }
         }
     </style>
 </head>
@@ -119,13 +161,50 @@
     <script type="text/babel" data-type="module">
         import React, { useState, useEffect, useRef } from 'react';
         import { createRoot } from 'react-dom/client';
-        import { Search, Wind, MapPin, Calendar, Sun, Cloud, CloudRain, CloudSnow, CloudLightning, CloudFog, Loader2, Thermometer, LocateFixed, Droplets, User, Star, X, Sparkles, Map as MapIcon, CloudRain as RadarIcon, Play, Pause, Umbrella, Sunrise, Sunset, Clock, ArrowUp, ArrowDown, AlertTriangle, Share2, Check, Navigation, Shirt, Activity, Gauge, Eye, Volume2, VolumeX, Mic, MicOff, MessageSquare, Moon } from 'lucide-react';
+        import { Search, Wind, MapPin, Calendar, Sun, Cloud, CloudRain, CloudSnow, CloudLightning, CloudFog, Loader2, Thermometer, LocateFixed, Droplets, User, Star, X, Sparkles, Map as MapIcon, CloudRain as RadarIcon, Play, Pause, Umbrella, Sunrise, Sunset, Clock, ArrowUp, ArrowDown, AlertTriangle, Share2, Check, Navigation, Shirt, Activity, Gauge, Eye, Volume2, VolumeX, Mic, MicOff, MessageSquare, Moon, Globe, Layers } from 'lucide-react';
 
-        // 雨雲レーダーコンポーネント
+        // --- 天候エフェクトコンポーネント ---
+        const WeatherEffects = ({ weathercode }) => {
+            const isRain = [51, 53, 55, 61, 63, 65, 80, 81, 82, 95, 96, 99].includes(weathercode);
+            const isSnow = [71, 73, 75, 77, 85, 86].includes(weathercode);
+
+            if (isRain) {
+                return (
+                    <div className="rain overflow-hidden h-full w-full absolute top-0 left-0">
+                        {[...Array(50)].map((_, i) => (
+                            <div key={i} className="rain-drop" style={{
+                                left: `${Math.random() * 100}%`,
+                                animationDuration: `${0.5 + Math.random() * 0.5}s`,
+                                animationDelay: `${Math.random() * 2}s`
+                            }}></div>
+                        ))}
+                    </div>
+                );
+            }
+            if (isSnow) {
+                return (
+                    <div className="snow overflow-hidden h-full w-full absolute top-0 left-0">
+                        {[...Array(30)].map((_, i) => (
+                            <div key={i} className="snow-flake" style={{
+                                left: `${Math.random() * 100}%`,
+                                width: `${5 + Math.random() * 5}px`,
+                                height: `${5 + Math.random() * 5}px`,
+                                animationDuration: `${3 + Math.random() * 5}s`,
+                                animationDelay: `${Math.random() * 5}s`
+                            }}></div>
+                        ))}
+                    </div>
+                );
+            }
+            return null;
+        };
+
+        // --- マップコンポーネント ---
         const RadarMap = ({ lat, lon }) => {
             const mapRef = useRef(null);
             const mapInstanceRef = useRef(null);
-            const radarLayerRef = useRef(null);
+            const baseLayerRef = useRef(null); // ベースレイヤー管理用
+            const radarLayerRef = useRef(null); // レーダーレイヤー管理用
             
             const [frames, setFrames] = useState([]); 
             const [currentFrameIndex, setCurrentFrameIndex] = useState(0);
@@ -133,9 +212,14 @@
             const [isPlaying, setIsPlaying] = useState(false);
             const [apiHost, setApiHost] = useState('https://tile.cache.rainviewer.com');
             const [isForecast, setIsForecast] = useState(false);
+            const [mapType, setMapType] = useState('radar'); // 'radar' (OSM) or 'satellite' (Esri)
 
+            // マップ初期化とベースレイヤー管理
             useEffect(() => {
                 if (!mapRef.current) return;
+
+                const osmUrl = 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
+                const satelliteUrl = 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}';
 
                 if (!mapInstanceRef.current) {
                     mapInstanceRef.current = L.map(mapRef.current, {
@@ -145,14 +229,11 @@
                         attributionControl: false
                     });
 
-                    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-                        opacity: 0.6,
+                    // 初回ベースレイヤー追加
+                    baseLayerRef.current = L.tileLayer(mapType === 'satellite' ? satelliteUrl : osmUrl, {
+                        opacity: mapType === 'satellite' ? 1.0 : 0.6,
+                        attribution: mapType === 'satellite' ? 'Tiles &copy; Esri' : '&copy; OSM'
                     }).addTo(mapInstanceRef.current);
-                    
-                    L.control.attribution({
-                        position: 'bottomright',
-                        prefix: false
-                    }).addAttribution('&copy; OSM, RainViewer').addTo(mapInstanceRef.current);
 
                     const icon = L.divIcon({
                         className: 'custom-div-icon',
@@ -163,14 +244,28 @@
                     L.marker([lat, lon], { icon }).addTo(mapInstanceRef.current);
                 } else {
                     mapInstanceRef.current.setView([lat, lon], 8);
+                    
+                    // ベースレイヤーの切り替え
+                    if (baseLayerRef.current) {
+                        mapInstanceRef.current.removeLayer(baseLayerRef.current);
+                    }
+                    baseLayerRef.current = L.tileLayer(mapType === 'satellite' ? satelliteUrl : osmUrl, {
+                        opacity: mapType === 'satellite' ? 1.0 : 0.6,
+                        attribution: mapType === 'satellite' ? 'Tiles &copy; Esri' : '&copy; OSM'
+                    }).addTo(mapInstanceRef.current);
+                    
+                    // レーダーレイヤーの順序を最前面に保つために再追加が必要な場合があるが、
+                    // zIndexを設定しているので通常は大丈夫。念のため背面へ送る
+                    baseLayerRef.current.bringToBack();
                 }
                 
                 setTimeout(() => {
                     if (mapInstanceRef.current) mapInstanceRef.current.invalidateSize();
                 }, 100);
 
-            }, [lat, lon]);
+            }, [lat, lon, mapType]);
 
+            // RainViewerデータ取得
             useEffect(() => {
                 const fetchRadar = async () => {
                     try {
@@ -199,6 +294,7 @@
                 fetchRadar();
             }, []);
 
+            // レーダーレイヤー更新
             useEffect(() => {
                 if (!mapInstanceRef.current || frames.length === 0) return;
 
@@ -212,9 +308,12 @@
                     mapInstanceRef.current.removeLayer(radarLayerRef.current);
                 }
 
-                radarLayerRef.current = L.tileLayer(`${apiHost}${frame.path}/256/{z}/{x}/{y}/6/1_1.png`, {
+                // 常に雨雲レーダーを表示 (衛星画像モードでも雨雲を重ねる)
+                const layerUrl = `${apiHost}${frame.path}/256/{z}/{x}/{y}/6/1_1.png`;
+
+                radarLayerRef.current = L.tileLayer(layerUrl, {
                     opacity: 0.8,
-                    zIndex: 100
+                    zIndex: 100 // 雨雲を最前面に
                 }).addTo(mapInstanceRef.current);
 
             }, [currentFrameIndex, frames, apiHost, pastCount]);
@@ -249,6 +348,24 @@
                 <div className="w-full h-full flex flex-col relative rounded-3xl overflow-hidden bg-white/30 border border-white/20">
                     <div className="flex-1 relative min-h-[400px]">
                         <div ref={mapRef} className="absolute inset-0 w-full h-full z-0" />
+                        
+                        {/* マップ切り替えボタン */}
+                        <div className="absolute top-2 right-2 z-[400] flex flex-col gap-2">
+                            <button 
+                                onClick={() => setMapType('radar')}
+                                className={`p-2 rounded-lg shadow-md transition-colors ${mapType === 'radar' ? 'bg-blue-600 text-white' : 'bg-white text-gray-700 hover:bg-gray-100'}`}
+                                title="標準"
+                            >
+                                <MapIcon className="w-5 h-5" />
+                            </button>
+                            <button 
+                                onClick={() => setMapType('satellite')}
+                                className={`p-2 rounded-lg shadow-md transition-colors ${mapType === 'satellite' ? 'bg-blue-600 text-white' : 'bg-white text-gray-700 hover:bg-gray-100'}`}
+                                title="衛星画像"
+                            >
+                                <Globe className="w-5 h-5" />
+                            </button>
+                        </div>
                     </div>
                     
                     <div className="bg-white/90 backdrop-blur-md p-3 border-t border-gray-200/50 z-10 relative">
@@ -269,6 +386,7 @@
                                     )}
                                 </div>
                             </div>
+                            <span className="text-xs font-bold text-gray-500">{mapType === 'radar' ? '標準マップ' : '衛星画像'}</span>
                         </div>
                         
                         <div className="relative w-full h-8 flex items-center px-1">
@@ -365,7 +483,7 @@
             const [coords, setCoords] = useState({ lat: 35.6895, lon: 139.6917 });
             const [shareToast, setShareToast] = useState(false);
             const [isSpeaking, setIsSpeaking] = useState(false);
-            const [isListening, setIsListening] = useState(false); // 音声認識状態
+            const [isListening, setIsListening] = useState(false);
 
             const getWeatherIcon = (code) => {
                 if (code === 0) return { icon: <Sun className="w-full h-full text-yellow-300 animate-spin-slow drop-shadow-md" />, label: '快晴', bg: 'from-orange-400 via-amber-300 to-yellow-200', text: 'text-yellow-100' };
@@ -388,7 +506,6 @@
                 return { icon: <User className="w-5 h-5" />, label: 'コート' };
             };
 
-            // 今日のひとこと
             const getDailyAdvice = (current) => {
                 const { weathercode, temperature, windspeed } = current;
                 if (weathercode >= 95) return "雷が鳴りやすいです。外出は控えめに。";
@@ -400,7 +517,29 @@
                 return "素敵な一日をお過ごしください！";
             };
 
-            // 月齢計算（簡易版）
+            // 生活指数 (Life Index) の計算
+            const getLifeIndices = (current) => {
+                const { weathercode, humidity, windspeed, temperature } = current;
+                const isRainy = [51, 53, 55, 61, 63, 65, 80, 81, 82, 95, 96, 99].includes(weathercode);
+                
+                // 洗濯
+                let laundry = { label: 'OK', color: 'text-green-300', icon: <Sun className="w-4 h-4"/> };
+                if (isRainy) laundry = { label: '不可', color: 'text-red-300', icon: <CloudRain className="w-4 h-4"/> };
+                else if (humidity > 70) laundry = { label: '乾きにくい', color: 'text-yellow-300', icon: <Cloud className="w-4 h-4"/> };
+
+                // 傘
+                let umbrella = { label: '不要', color: 'text-green-300', icon: <Sun className="w-4 h-4"/> };
+                if (isRainy) umbrella = { label: '必要', color: 'text-red-300', icon: <Umbrella className="w-4 h-4"/> };
+                else if (weathercode >= 1 && weathercode <= 3) umbrella = { label: '折りたたみ', color: 'text-yellow-300', icon: <Cloud className="w-4 h-4"/> };
+
+                // 乾燥肌
+                let skin = { label: '快適', color: 'text-green-300' };
+                if (humidity < 30) skin = { label: '警戒', color: 'text-red-300' };
+                else if (humidity < 50) skin = { label: '注意', color: 'text-yellow-300' };
+
+                return { laundry, umbrella, skin };
+            };
+
             const getMoonPhase = (date) => {
                 let year = date.getFullYear();
                 let month = date.getMonth() + 1;
@@ -417,14 +556,13 @@
                 month++;
                 c = 365.25 * year;
                 e = 30.6 * month;
-                jd = c + e + day - 694039.09; // 1900/1/1
-                jd /= 29.5305882; // 月の満ち欠け周期
+                jd = c + e + day - 694039.09;
+                jd /= 29.5305882;
                 b = parseInt(jd);
                 jd -= b;
                 b = Math.round(jd * 8);
                 if (b >= 8) b = 0;
 
-                // 0:新月, 4:満月
                 const phases = ['🌑', '🌒', '🌓', '🌔', '🌕', '🌖', '🌗', '🌘'];
                 return phases[b];
             };
@@ -514,7 +652,6 @@
                 try {
                     setCoords({ lat: latitude, lon: longitude });
 
-                    // 気圧(pressure_msl)と視界(visibility)を追加
                     const weatherUrl = `https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}&current=temperature_2m,relative_humidity_2m,apparent_temperature,weather_code,wind_speed_10m,wind_direction_10m,pressure_msl,visibility&hourly=temperature_2m,weather_code,precipitation_probability&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max,sunrise,sunset,uv_index_max&timezone=auto&forecast_days=15`;
                     
                     const weatherRes = await fetch(weatherUrl);
@@ -573,7 +710,6 @@
                 );
             };
 
-            // 音声認識
             const handleVoiceSearch = () => {
                 if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
                     setError("お使いのブラウザは音声認識に対応していません");
@@ -706,10 +842,14 @@
             const clothing = weatherData ? getClothingAdvice(weatherData.current.temperature) : null;
             const aqiInfo = airQuality ? getAqiLabel(airQuality.us_aqi) : null;
             const dailyAdvice = weatherData ? getDailyAdvice(weatherData.current) : "";
+            const lifeIndices = weatherData ? getLifeIndices(weatherData.current) : null;
 
             return (
                 <div className={`min-h-screen relative overflow-x-hidden bg-gradient-to-br ${bgGradient} bg-[length:400%_400%] animate-gradient-slow transition-all duration-1000 ease-in-out flex flex-col items-center p-2 md:p-6`}>
                 
+                {/* Weather Effects (Rain/Snow) */}
+                {weatherData && <WeatherEffects weathercode={weatherData.current.weathercode} />}
+
                 <div className="fixed top-0 left-0 w-full h-full overflow-hidden pointer-events-none z-0">
                     <div className="absolute top-[-10%] left-[-10%] w-[50%] h-[50%] bg-white/10 rounded-full mix-blend-overlay blur-[80px] animate-blob"></div>
                     <div className="absolute bottom-[-20%] left-[20%] w-[50%] h-[50%] bg-white/10 rounded-full mix-blend-overlay blur-[80px] animate-blob animation-delay-4000"></div>
@@ -885,6 +1025,22 @@
                                             </div>
                                         </div>
 
+                                        {/* Life Index (New) */}
+                                        <div className="grid grid-cols-4 gap-2 mb-6 px-4 md:px-6">
+                                            {lifeIndices && Object.entries(lifeIndices).map(([key, data]) => (
+                                                <div key={key} className="bg-black/10 p-2 rounded-xl flex flex-col items-center justify-center border border-white/10">
+                                                    <div className={`mb-1 ${data.color}`}>{data.icon ? data.icon : <Activity className="w-4 h-4" />}</div>
+                                                    <span className="text-[10px] text-white/70 font-bold">{key === 'laundry' ? '洗濯' : key === 'umbrella' ? '傘' : '肌'}</span>
+                                                    <span className="text-xs font-black text-white">{data.label}</span>
+                                                </div>
+                                            ))}
+                                            <div className="bg-black/10 p-2 rounded-xl flex flex-col items-center justify-center border border-white/10">
+                                                <div className={`mb-1 ${aqiInfo ? aqiInfo.color : 'text-white'}`}><Activity className="w-4 h-4" /></div>
+                                                <span className="text-[10px] text-white/70 font-bold">空気</span>
+                                                <span className="text-xs font-black text-white">{aqiInfo ? aqiInfo.label : '-'}</span>
+                                            </div>
+                                        </div>
+
                                         {/* Info Cards (AQI & Clothing) */}
                                         <div className="grid grid-cols-2 gap-3 mb-6 px-4 md:px-6">
                                             <div className="bg-black/10 p-3 rounded-2xl flex flex-col items-center justify-center border border-white/10">
@@ -895,14 +1051,11 @@
                                             </div>
                                             <div className="bg-black/10 p-3 rounded-2xl flex flex-col items-center justify-center border border-white/10">
                                                 <div className="flex items-center space-x-1 mb-1 text-green-200">
-                                                    <Activity className="w-5 h-5" /> <span className="text-xs font-bold">空気 & UV</span>
+                                                    <Activity className="w-5 h-5" /> <span className="text-xs font-bold">UV指数</span>
                                                 </div>
                                                 <div className="text-center">
-                                                    <div className={`text-sm font-bold ${aqiInfo ? aqiInfo.color : 'text-white'}`}>
-                                                        AQI: {airQuality ? airQuality.us_aqi : '--'} ({aqiInfo ? aqiInfo.label : '-'})
-                                                    </div>
-                                                    <div className="text-xs text-white/70">
-                                                        UV指数: {Math.round(weatherData.daily.uv_index_max[0])}
+                                                    <div className="text-sm font-bold text-white">
+                                                        {Math.round(weatherData.daily.uv_index_max[0])}
                                                     </div>
                                                 </div>
                                             </div>

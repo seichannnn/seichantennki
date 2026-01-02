@@ -161,7 +161,7 @@
     <script type="text/babel" data-type="module">
         import React, { useState, useEffect, useRef } from 'react';
         import { createRoot } from 'react-dom/client';
-        import { Search, Wind, MapPin, Calendar, Sun, Cloud, CloudRain, CloudSnow, CloudLightning, CloudFog, Loader2, Thermometer, LocateFixed, Droplets, User, Star, X, Sparkles, Map as MapIcon, CloudRain as RadarIcon, Play, Pause, Umbrella, Sunrise, Sunset, Clock, ArrowUp, ArrowDown, AlertTriangle, Share2, Check, Navigation, Shirt, Activity, Gauge, Eye, Volume2, VolumeX, Mic, MicOff, MessageSquare, Moon, Globe, Layers } from 'lucide-react';
+        import { Search, Wind, MapPin, Calendar, Sun, Cloud, CloudRain, CloudSnow, CloudLightning, CloudFog, Loader2, Thermometer, LocateFixed, Droplets, User, Star, X, Sparkles, Map as MapIcon, CloudRain as RadarIcon, Play, Pause, Umbrella, Sunrise, Sunset, Clock, ArrowUp, ArrowDown, AlertTriangle, Share2, Check, Navigation, Shirt, Activity, Gauge, Eye, Volume2, VolumeX, Mic, MicOff, MessageSquare, Moon, Globe, Layers, Mountain, Settings } from 'lucide-react';
 
         // --- 天候エフェクトコンポーネント ---
         const WeatherEffects = ({ weathercode }) => {
@@ -203,8 +203,8 @@
         const RadarMap = ({ lat, lon }) => {
             const mapRef = useRef(null);
             const mapInstanceRef = useRef(null);
-            const baseLayerRef = useRef(null); // ベースレイヤー管理用
-            const radarLayerRef = useRef(null); // レーダーレイヤー管理用
+            const baseLayerRef = useRef(null);
+            const radarLayerRef = useRef(null);
             
             const [frames, setFrames] = useState([]); 
             const [currentFrameIndex, setCurrentFrameIndex] = useState(0);
@@ -212,14 +212,26 @@
             const [isPlaying, setIsPlaying] = useState(false);
             const [apiHost, setApiHost] = useState('https://tile.cache.rainviewer.com');
             const [isForecast, setIsForecast] = useState(false);
-            const [mapType, setMapType] = useState('radar'); // 'radar' (OSM) or 'satellite' (Esri)
+            
+            // Map Settings
+            const [baseMap, setBaseMap] = useState('standard'); // standard, satellite, terrain, dark
+            const [radarColor, setRadarColor] = useState(1); // 1:Original, 2:Universal Blue, 3:TITAN, 4:TWC, 5:Meteored, 6:NEXRAD, 7:RAINBOW, 8:DarkSky
+            const [radarSmooth, setRadarSmooth] = useState(true);
+            const [radarSnow, setRadarSnow] = useState(false);
+            const [isMenuOpen, setIsMenuOpen] = useState(false);
 
-            // マップ初期化とベースレイヤー管理
             useEffect(() => {
                 if (!mapRef.current) return;
 
-                const osmUrl = 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
-                const satelliteUrl = 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}';
+                // Base Map URLs
+                const baseMaps = {
+                    standard: { url: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', attr: '&copy; OSM' },
+                    satellite: { url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', attr: 'Tiles &copy; Esri' },
+                    terrain: { url: 'https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png', attr: '&copy; OpenTopoMap' },
+                    dark: { url: 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', attr: '&copy; CartoDB' }
+                };
+
+                const selectedBase = baseMaps[baseMap];
 
                 if (!mapInstanceRef.current) {
                     mapInstanceRef.current = L.map(mapRef.current, {
@@ -229,10 +241,9 @@
                         attributionControl: false
                     });
 
-                    // 初回ベースレイヤー追加
-                    baseLayerRef.current = L.tileLayer(mapType === 'satellite' ? satelliteUrl : osmUrl, {
-                        opacity: mapType === 'satellite' ? 1.0 : 0.6,
-                        attribution: mapType === 'satellite' ? 'Tiles &copy; Esri' : '&copy; OSM'
+                    baseLayerRef.current = L.tileLayer(selectedBase.url, {
+                        opacity: baseMap === 'satellite' ? 1.0 : 0.7,
+                        attribution: selectedBase.attr
                     }).addTo(mapInstanceRef.current);
 
                     const icon = L.divIcon({
@@ -245,17 +256,14 @@
                 } else {
                     mapInstanceRef.current.setView([lat, lon], 8);
                     
-                    // ベースレイヤーの切り替え
                     if (baseLayerRef.current) {
                         mapInstanceRef.current.removeLayer(baseLayerRef.current);
                     }
-                    baseLayerRef.current = L.tileLayer(mapType === 'satellite' ? satelliteUrl : osmUrl, {
-                        opacity: mapType === 'satellite' ? 1.0 : 0.6,
-                        attribution: mapType === 'satellite' ? 'Tiles &copy; Esri' : '&copy; OSM'
+                    baseLayerRef.current = L.tileLayer(selectedBase.url, {
+                        opacity: baseMap === 'satellite' ? 1.0 : 0.7,
+                        attribution: selectedBase.attr
                     }).addTo(mapInstanceRef.current);
                     
-                    // レーダーレイヤーの順序を最前面に保つために再追加が必要な場合があるが、
-                    // zIndexを設定しているので通常は大丈夫。念のため背面へ送る
                     baseLayerRef.current.bringToBack();
                 }
                 
@@ -263,9 +271,8 @@
                     if (mapInstanceRef.current) mapInstanceRef.current.invalidateSize();
                 }, 100);
 
-            }, [lat, lon, mapType]);
+            }, [lat, lon, baseMap]);
 
-            // RainViewerデータ取得
             useEffect(() => {
                 const fetchRadar = async () => {
                     try {
@@ -294,7 +301,6 @@
                 fetchRadar();
             }, []);
 
-            // レーダーレイヤー更新
             useEffect(() => {
                 if (!mapInstanceRef.current || frames.length === 0) return;
 
@@ -308,15 +314,18 @@
                     mapInstanceRef.current.removeLayer(radarLayerRef.current);
                 }
 
-                // 常に雨雲レーダーを表示 (衛星画像モードでも雨雲を重ねる)
-                const layerUrl = `${apiHost}${frame.path}/256/{z}/{x}/{y}/6/1_1.png`;
+                // RainViewer Options: {color}/{smooth}_{snow}.png
+                // smooth: 1 (on), 0 (off)
+                // snow: 1 (on), 0 (off)
+                const options = `${radarSmooth ? '1' : '0'}_${radarSnow ? '1' : '0'}`;
+                const layerUrl = `${apiHost}${frame.path}/256/{z}/{x}/{y}/${radarColor}/${options}.png`;
 
                 radarLayerRef.current = L.tileLayer(layerUrl, {
                     opacity: 0.8,
-                    zIndex: 100 // 雨雲を最前面に
+                    zIndex: 100
                 }).addTo(mapInstanceRef.current);
 
-            }, [currentFrameIndex, frames, apiHost, pastCount]);
+            }, [currentFrameIndex, frames, apiHost, pastCount, radarColor, radarSmooth, radarSnow]);
 
             useEffect(() => {
                 let intervalId;
@@ -344,27 +353,60 @@
 
             const nowPositionPercent = frames.length > 1 ? ((pastCount - 1) / (frames.length - 1)) * 100 : 0;
 
+            // マップ設定メニュー
+            const MapSettings = () => (
+                <div className="absolute top-12 right-2 z-[400] bg-white/90 backdrop-blur-md p-3 rounded-xl shadow-lg border border-gray-200 text-gray-800 text-xs w-48 transition-all animate-in fade-in zoom-in-95 duration-200">
+                    <div className="space-y-3">
+                        <div>
+                            <p className="font-bold mb-1 text-gray-500">地図の種類</p>
+                            <div className="grid grid-cols-2 gap-1">
+                                <button onClick={() => setBaseMap('standard')} className={`p-1.5 rounded border ${baseMap === 'standard' ? 'bg-blue-100 border-blue-500 text-blue-700' : 'bg-white border-gray-200'}`}>標準</button>
+                                <button onClick={() => setBaseMap('satellite')} className={`p-1.5 rounded border ${baseMap === 'satellite' ? 'bg-blue-100 border-blue-500 text-blue-700' : 'bg-white border-gray-200'}`}>衛星</button>
+                                <button onClick={() => setBaseMap('terrain')} className={`p-1.5 rounded border ${baseMap === 'terrain' ? 'bg-blue-100 border-blue-500 text-blue-700' : 'bg-white border-gray-200'}`}>地形</button>
+                                <button onClick={() => setBaseMap('dark')} className={`p-1.5 rounded border ${baseMap === 'dark' ? 'bg-blue-100 border-blue-500 text-blue-700' : 'bg-white border-gray-200'}`}>ダーク</button>
+                            </div>
+                        </div>
+                        <div>
+                            <p className="font-bold mb-1 text-gray-500">レーダー色</p>
+                            <select value={radarColor} onChange={(e) => setRadarColor(e.target.value)} className="w-full p-1.5 rounded border border-gray-300 bg-white">
+                                <option value="1">標準 (Original)</option>
+                                <option value="2">青系 (Universal Blue)</option>
+                                <option value="3">派手 (TITAN)</option>
+                                <option value="4">天気予報風 (TWC)</option>
+                                <option value="6">高解像度風 (NEXRAD)</option>
+                                <option value="8">モノクロ (Dark Sky)</option>
+                            </select>
+                        </div>
+                        <div>
+                            <p className="font-bold mb-1 text-gray-500">オプション</p>
+                            <label className="flex items-center space-x-2 cursor-pointer mb-1">
+                                <input type="checkbox" checked={radarSmooth} onChange={(e) => setRadarSmooth(e.target.checked)} className="rounded text-blue-500 focus:ring-blue-500" />
+                                <span>スムージング</span>
+                            </label>
+                            <label className="flex items-center space-x-2 cursor-pointer">
+                                <input type="checkbox" checked={radarSnow} onChange={(e) => setRadarSnow(e.target.checked)} className="rounded text-blue-500 focus:ring-blue-500" />
+                                <span>雪を色分け</span>
+                            </label>
+                        </div>
+                    </div>
+                </div>
+            );
+
             return (
                 <div className="w-full h-full flex flex-col relative rounded-3xl overflow-hidden bg-white/30 border border-white/20">
                     <div className="flex-1 relative min-h-[400px]">
                         <div ref={mapRef} className="absolute inset-0 w-full h-full z-0" />
                         
-                        {/* マップ切り替えボタン */}
-                        <div className="absolute top-2 right-2 z-[400] flex flex-col gap-2">
+                        {/* 設定ボタン */}
+                        <div className="absolute top-2 right-2 z-[400]">
                             <button 
-                                onClick={() => setMapType('radar')}
-                                className={`p-2 rounded-lg shadow-md transition-colors ${mapType === 'radar' ? 'bg-blue-600 text-white' : 'bg-white text-gray-700 hover:bg-gray-100'}`}
-                                title="標準"
+                                onClick={() => setIsMenuOpen(!isMenuOpen)}
+                                className={`p-2 rounded-full shadow-md transition-colors ${isMenuOpen ? 'bg-blue-600 text-white' : 'bg-white text-gray-700 hover:bg-gray-100'}`}
+                                title="地図設定"
                             >
-                                <MapIcon className="w-5 h-5" />
+                                <Layers className="w-5 h-5" />
                             </button>
-                            <button 
-                                onClick={() => setMapType('satellite')}
-                                className={`p-2 rounded-lg shadow-md transition-colors ${mapType === 'satellite' ? 'bg-blue-600 text-white' : 'bg-white text-gray-700 hover:bg-gray-100'}`}
-                                title="衛星画像"
-                            >
-                                <Globe className="w-5 h-5" />
-                            </button>
+                            {isMenuOpen && <MapSettings />}
                         </div>
                     </div>
                     
@@ -386,7 +428,7 @@
                                     )}
                                 </div>
                             </div>
-                            <span className="text-xs font-bold text-gray-500">{mapType === 'radar' ? '標準マップ' : '衛星画像'}</span>
+                            <span className="text-xs font-bold text-gray-500">RainViewer</span>
                         </div>
                         
                         <div className="relative w-full h-8 flex items-center px-1">
@@ -1150,8 +1192,8 @@
                                         </div>
                                     </>
                                 ) : (
-                                    /* レーダーモード */
-                                    <div className="h-full min-h-[500px] flex flex-col">
+                                    /* レーダーモード: 高さ固定で表示 */
+                                    <div className="h-full min-h-[500px] flex flex-col relative">
                                         <div className="md:hidden inline-flex items-center justify-center space-x-2 bg-black/10 px-4 py-1.5 rounded-full border border-white/20 backdrop-blur-md shadow-lg mb-4 hover:bg-black/20 transition-colors cursor-default mx-auto">
                                             <MapPin className="w-4 h-4 text-white" />
                                             <h2 className="text-sm font-black tracking-widest text-white text-glow">{weatherData.city} 周辺</h2>
@@ -1159,7 +1201,7 @@
                                         <div className="flex-1 w-full bg-white/20 rounded-3xl border border-white/20 shadow-inner overflow-hidden relative min-h-[400px]">
                                             <RadarMap lat={coords.lat} lon={coords.lon} />
                                         </div>
-                                        <p className="text-white/60 text-[10px] text-center mt-2 font-bold">データ提供: OpenStreetMap, RainViewer</p>
+                                        <p className="text-white/60 text-[10px] text-center mt-2 font-bold">データ提供: OpenStreetMap, RainViewer, Esri</p>
                                     </div>
                                 )}
                             </div>

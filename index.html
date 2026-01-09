@@ -561,7 +561,6 @@
                 const { weathercode, temperature, windspeed } = current;
                 let messages = [];
 
-                // 天気コードに基づくメッセージ
                 if (weathercode === 0) {
                     messages.push("絶好の洗濯日和です！気持ちいいですね。");
                     messages.push("サングラスが活躍しそうな日差しです。");
@@ -588,7 +587,6 @@
                     messages.push("パソコンなどの電子機器の電源にも注意を。");
                 }
 
-                // 気温に基づくメッセージ
                 if (temperature >= 35) {
                     messages.push("危険な暑さです。不要な外出は避けましょう。");
                     messages.push("エアコンを適切に使って命を守りましょう。");
@@ -614,21 +612,18 @@
                     messages.push("手袋と帽子で完全防備をおすすめします。");
                 }
 
-                // 風速に基づくメッセージ
                 if (windspeed >= 30) {
                     messages.push("風が強いです。帽子が飛ばされないように。");
                     messages.push("洗濯物が飛ばされないようしっかり固定を！");
                     messages.push("髪型が崩れやすいかもしれません。");
                 }
 
-                // デフォルト
                 if (messages.length === 0) {
                     messages.push("素敵な一日をお過ごしください！");
                     messages.push("今日も一日頑張りましょう！");
                     messages.push("空を見上げてリフレッシュ！");
                 }
 
-                // ランダムに1つ選択
                 const randomIndex = Math.floor(Math.random() * messages.length);
                 return messages[randomIndex];
             };
@@ -720,16 +715,7 @@
                     // 候補がある場合
                     const topResult = geoData.results[0];
                     
-                    // ユーザーの要望: 天気が表示されるときは「もしかして？」を出さない。
-                    // なので、成功パターンでは suggestions をセットしない。
-                    // もし「見つかりませんでした（＝topResultが取得できない）」レベルのエラーハンドリングを強化するなら別だが、
-                    // 現状のAPI仕様では results があれば成功扱い。
-                    
-                    // const otherCandidates = geoData.results.slice(1);
-                    // if (otherCandidates.length > 0) {
-                    //    setSuggestions(otherCandidates);
-                    // }
-                    // ↑ これを削除（コメントアウト）して、成功時は候補を出さないようにする。
+                    // 成功時は候補リストを表示しない（suggestionsをセットしない）
 
                     const { latitude, longitude, name } = topResult;
                     
@@ -739,7 +725,7 @@
                     else if (topResult.country) displayName += `, ${topResult.country}`;
 
                     await Promise.all([
-                        fetchWeatherCommon(latitude, longitude, displayName),
+                        fetchWeatherCommon(latitude, longitude, displayName, name), // rawNameとしてnameを渡す
                         fetchAirQuality(latitude, longitude)
                     ]);
                     
@@ -765,7 +751,7 @@
                     else if (country) displayName += `, ${country}`;
 
                     await Promise.all([
-                        fetchWeatherCommon(latitude, longitude, displayName),
+                        fetchWeatherCommon(latitude, longitude, displayName, name), // rawNameとしてnameを渡す
                         fetchAirQuality(latitude, longitude)
                     ]);
                     
@@ -793,7 +779,7 @@
                         console.warn("地名取得失敗:", e);
                     }
                     await Promise.all([
-                        fetchWeatherCommon(latitude, longitude, cityName),
+                        fetchWeatherCommon(latitude, longitude, cityName, cityName), // rawNameとしてcityNameを渡す
                         fetchAirQuality(latitude, longitude)
                     ]);
                 } catch (err) {
@@ -814,7 +800,7 @@
                 }
             };
 
-            const fetchWeatherCommon = async (latitude, longitude, cityName) => {
+            const fetchWeatherCommon = async (latitude, longitude, cityName, rawName) => {
                 try {
                     setCoords({ lat: latitude, lon: longitude });
 
@@ -839,6 +825,7 @@
 
                     setWeatherData({
                         city: cityName,
+                        rawName: rawName || cityName, // 検索用の名前を保存
                         current: {
                             time: weatherData.current.time,
                             weathercode: weatherData.current.weather_code,
@@ -924,13 +911,19 @@
 
             useEffect(() => {
                 const params = new URLSearchParams(window.location.search);
-                const cityParam = params.get('city');
+                let cityParam = params.get('city');
+
                 if (cityParam) {
+                    // カンマが含まれている場合、最初の部分だけを使う（共有リンク対策）
+                    if (cityParam.includes(',')) {
+                        cityParam = cityParam.split(',')[0].trim();
+                    }
                     fetchWeather(cityParam);
                 } else {
                     const savedCity = localStorage.getItem('weatherAppLastCity');
                     fetchWeather(savedCity || 'Tokyo');
                 }
+
                 const savedFavorites = localStorage.getItem('weatherAppFavorites');
                 if (savedFavorites) setFavorites(JSON.parse(savedFavorites));
             }, []);
@@ -938,7 +931,9 @@
             const handleShare = () => {
                 if (!weatherData) return;
                 const url = new URL(window.location.href);
-                url.searchParams.set('city', weatherData.city);
+                // rawNameがあればそれを優先、なければcityを使用
+                const shareName = weatherData.rawName || weatherData.city.split(',')[0].trim();
+                url.searchParams.set('city', shareName);
                 const textArea = document.createElement("textarea");
                 textArea.value = url.toString();
                 document.body.appendChild(textArea);

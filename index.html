@@ -161,7 +161,7 @@
     <script type="text/babel" data-type="module">
         import React, { useState, useEffect, useRef } from 'react';
         import { createRoot } from 'react-dom/client';
-        import { Search, Wind, MapPin, Calendar, Sun, Cloud, CloudRain, CloudSnow, CloudLightning, CloudFog, Loader2, Thermometer, LocateFixed, Droplets, User, Star, X, Sparkles, Map as MapIcon, CloudRain as RadarIcon, Play, Pause, Umbrella, Sunrise, Sunset, Clock, ArrowUp, ArrowDown, AlertTriangle, Share2, Check, Navigation, Shirt, Activity, Gauge, Eye, Volume2, VolumeX, Mic, MicOff, MessageSquare, Moon, Globe, Layers, Mountain, Settings, History, HelpCircle } from 'lucide-react';
+        import { Search, Wind, MapPin, Calendar, Sun, Cloud, CloudRain, CloudSnow, CloudLightning, CloudFog, Loader2, Thermometer, LocateFixed, Droplets, User, Star, X, Sparkles, Map as MapIcon, CloudRain as RadarIcon, Play, Pause, Umbrella, Sunrise, Sunset, Clock, ArrowUp, ArrowDown, AlertTriangle, Share2, Check, Navigation, Shirt, Activity, Gauge, Eye, Volume2, VolumeX, Mic, MicOff, MessageSquare, Moon, Globe, Layers, Mountain, Settings, History, HelpCircle, TrendingUp, TrendingDown, Minus } from 'lucide-react';
 
         // --- 天候エフェクトコンポーネント ---
         const WeatherEffects = ({ weathercode }) => {
@@ -629,7 +629,7 @@
             };
 
             const getLifeIndices = (current) => {
-                const { weathercode, humidity, windspeed, temperature } = current;
+                const { weathercode, humidity, windspeed, temperature, cloud_cover } = current;
                 const isRainy = [51, 53, 55, 61, 63, 65, 80, 81, 82, 95, 96, 99].includes(weathercode);
                 
                 let laundry = { label: 'OK', color: 'text-green-300', icon: <Sun className="w-4 h-4"/> };
@@ -644,7 +644,13 @@
                 if (humidity < 30) skin = { label: '警戒', color: 'text-red-300' };
                 else if (humidity < 50) skin = { label: '注意', color: 'text-yellow-300' };
 
-                return { laundry, umbrella, skin };
+                // 星空指数
+                let starry = { label: '見えない', color: 'text-gray-400', icon: <Cloud className="w-4 h-4"/> };
+                if (cloud_cover < 20) starry = { label: '最高', color: 'text-yellow-300', icon: <Star className="w-4 h-4"/> };
+                else if (cloud_cover < 50) starry = { label: '良好', color: 'text-green-300', icon: <Star className="w-4 h-4"/> };
+                else if (cloud_cover < 80) starry = { label: '微妙', color: 'text-orange-300', icon: <CloudFog className="w-4 h-4"/> };
+
+                return { laundry, umbrella, skin, starry };
             };
 
             const getMoonPhase = (date) => {
@@ -804,7 +810,8 @@
                 try {
                     setCoords({ lat: latitude, lon: longitude });
 
-                    const weatherUrl = `https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}&current=temperature_2m,relative_humidity_2m,apparent_temperature,weather_code,wind_speed_10m,wind_direction_10m,pressure_msl,visibility&hourly=temperature_2m,weather_code,precipitation_probability&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max,sunrise,sunset,uv_index_max&timezone=auto&forecast_days=15`;
+                    // cloud_cover を追加, past_days=1 を追加
+                    const weatherUrl = `https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}&current=temperature_2m,relative_humidity_2m,apparent_temperature,weather_code,wind_speed_10m,wind_direction_10m,pressure_msl,visibility,cloud_cover&hourly=temperature_2m,weather_code,precipitation_probability&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max,sunrise,sunset,uv_index_max&timezone=auto&forecast_days=15&past_days=1`;
                     
                     const weatherRes = await fetch(weatherUrl);
                     const weatherData = await weatherRes.json();
@@ -815,6 +822,15 @@
                     const currentHourStr = currentTimeStr.slice(0, 13);
                     const hourlyIndex = weatherData.hourly.time.findIndex(t => t.startsWith(currentHourStr));
                     const startIndex = hourlyIndex !== -1 ? hourlyIndex : 0;
+
+                    // 昨日の同時刻のインデックス (過去1日分データがあるので、現在は24時間後にあるはず。startIndexは昨日からの通算)
+                    // past_days=1 なので、hourly配列の0番目は昨日の0時。
+                    // 今日がN日なら、hourlyのデータは N-1日 00:00 から始まる。
+                    // startIndex は "今の時間" を指している。
+                    // 昨日の同時刻は startIndex - 24。
+                    const yesterdayIndex = startIndex - 24;
+                    const yesterdayTemp = (yesterdayIndex >= 0) ? weatherData.hourly.temperature_2m[yesterdayIndex] : null;
+
                     
                     const hourlySlice = {
                         time: weatherData.hourly.time.slice(startIndex, startIndex + 72),
@@ -826,6 +842,9 @@
                     setWeatherData({
                         city: cityName,
                         rawName: rawName || cityName, // 検索用の名前を保存
+                        yesterday: {
+                            temperature: yesterdayTemp // 昨日の気温
+                        },
                         current: {
                             time: weatherData.current.time,
                             weathercode: weatherData.current.weather_code,
@@ -835,7 +854,8 @@
                             humidity: weatherData.current.relative_humidity_2m,
                             apparent_temp: weatherData.current.apparent_temperature,
                             pressure: weatherData.current.pressure_msl, 
-                            visibility: weatherData.current.visibility 
+                            visibility: weatherData.current.visibility,
+                            cloud_cover: weatherData.current.cloud_cover // 雲量
                         },
                         daily: weatherData.daily,
                         hourly: hourlySlice,
@@ -1004,6 +1024,12 @@
             const aqiInfo = airQuality ? getAqiLabel(airQuality.us_aqi) : null;
             const dailyAdvice = weatherData ? getDailyAdvice(weatherData.current) : "";
             const lifeIndices = weatherData ? getLifeIndices(weatherData.current) : null;
+            
+            // 前日差の計算
+            const tempDiff = weatherData && weatherData.yesterday && weatherData.yesterday.temperature !== null
+                ? (weatherData.current.temperature - weatherData.yesterday.temperature).toFixed(1)
+                : null;
+            const tempDiffSign = tempDiff > 0 ? '+' : '';
 
             return (
                 <div className={`min-h-screen relative overflow-x-hidden bg-gradient-to-br ${bgGradient} bg-[length:400%_400%] animate-gradient-slow transition-all duration-1000 ease-in-out flex flex-col items-center p-2 md:p-6`}>
@@ -1042,6 +1068,14 @@
                                     <h1 className="text-7xl lg:text-9xl font-black tracking-tighter text-white drop-shadow-lg text-glow">
                                     {weatherData.current.temperature}<span className="text-5xl lg:text-6xl align-top absolute -right-8 lg:-right-12">°</span>
                                     </h1>
+                                    
+                                    {/* 前日比表示 */}
+                                    {tempDiff !== null && (
+                                        <div className="flex items-center mt-2 bg-black/20 px-3 py-1 rounded-full text-xs font-bold backdrop-blur-sm">
+                                            {tempDiff > 0 ? <TrendingUp className="w-3 h-3 mr-1 text-red-300" /> : tempDiff < 0 ? <TrendingDown className="w-3 h-3 mr-1 text-blue-300" /> : <Minus className="w-3 h-3 mr-1 text-gray-300" />}
+                                            <span className="text-white/90">昨日比 {tempDiffSign}{tempDiff}°</span>
+                                        </div>
+                                    )}
                                 </div>
                                 
                                 <p className="text-xl lg:text-2xl font-black mt-4 text-white tracking-widest bg-black/10 px-8 py-2 rounded-full shadow-inner backdrop-blur-sm border border-white/10 hover:bg-black/20 transition-colors">
@@ -1214,7 +1248,16 @@
                                                 <div className="flex flex-col">
                                                     <span className="text-[10px] font-bold text-white/80 uppercase tracking-widest text-center">Current</span>
                                                     <h1 className="text-6xl font-black text-white drop-shadow-md leading-none">{weatherData.current.temperature}°</h1>
-                                                    <p className="text-sm font-bold text-white/80 text-center">{getWeatherIcon(weatherData.current.weathercode).label}</p>
+                                                    
+                                                    {/* 前日比表示 (Mobile) */}
+                                                    {tempDiff !== null && (
+                                                        <div className="flex items-center justify-center mt-1 bg-black/20 px-2 py-0.5 rounded-full text-[10px] font-bold backdrop-blur-sm">
+                                                            {tempDiff > 0 ? <TrendingUp className="w-2.5 h-2.5 mr-0.5 text-red-300" /> : tempDiff < 0 ? <TrendingDown className="w-2.5 h-2.5 mr-0.5 text-blue-300" /> : <Minus className="w-2.5 h-2.5 mr-0.5 text-gray-300" />}
+                                                            <span className="text-white/90">昨日比 {tempDiffSign}{tempDiff}°</span>
+                                                        </div>
+                                                    )}
+
+                                                    <p className="text-sm font-bold text-white/80 text-center mt-1">{getWeatherIcon(weatherData.current.weathercode).label}</p>
                                                 </div>
                                             </div>
                                             {/* 今日のひとこと (Mobile) */}
@@ -1228,7 +1271,7 @@
                                             {lifeIndices && Object.entries(lifeIndices).map(([key, data]) => (
                                                 <div key={key} className="bg-black/10 p-2 rounded-xl flex flex-col items-center justify-center border border-white/10 hover:bg-black/20 transition-colors">
                                                     <div className={`mb-1 ${data.color}`}>{data.icon ? data.icon : <Activity className="w-4 h-4" />}</div>
-                                                    <span className="text-[10px] text-white/70 font-bold">{key === 'laundry' ? '洗濯' : key === 'umbrella' ? '傘' : '肌'}</span>
+                                                    <span className="text-[10px] text-white/70 font-bold">{key === 'laundry' ? '洗濯' : key === 'umbrella' ? '傘' : key === 'skin' ? '肌' : '星空'}</span>
                                                     <span className="text-xs font-black text-white">{data.label}</span>
                                                 </div>
                                             ))}
@@ -1350,11 +1393,10 @@
                                         {/* Footer / Credit */}
                                         <footer className="mt-8 mb-4 text-center space-y-1">
                                             <p className="text-[10px] text-white/50 font-bold tracking-widest uppercase">Created by seichan</p>
-                              
                                         </footer>
                                     </>
                                 ) : (
-                                    /* レーダーモード: 高さ固定で表示 */
+                                    /* レーダーモード */
                                     <div className="h-full min-h-[500px] flex flex-col relative">
                                         <div className="md:hidden inline-flex items-center justify-center space-x-2 bg-black/10 px-4 py-1.5 rounded-full border border-white/20 backdrop-blur-md shadow-lg mb-4 hover:bg-black/20 transition-colors cursor-default mx-auto">
                                             <MapPin className="w-4 h-4 text-white" />

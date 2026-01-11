@@ -556,7 +556,6 @@
                 return { icon: <User className="w-5 h-5" />, label: 'コート' };
             };
 
-            // 今日のひとこと (バリエーション強化版)
             const getDailyAdvice = (current) => {
                 const { weathercode, temperature, windspeed } = current;
                 let messages = [];
@@ -811,7 +810,8 @@
                     setCoords({ lat: latitude, lon: longitude });
 
                     // cloud_cover を追加, past_days=1 を追加
-                    const weatherUrl = `https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}&current=temperature_2m,relative_humidity_2m,apparent_temperature,weather_code,wind_speed_10m,wind_direction_10m,pressure_msl,visibility,cloud_cover&hourly=temperature_2m,weather_code,precipitation_probability&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max,sunrise,sunset,uv_index_max&timezone=auto&forecast_days=15&past_days=1`;
+                    // hourlyにwind_speed_10mを追加
+                    const weatherUrl = `https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}&current=temperature_2m,relative_humidity_2m,apparent_temperature,weather_code,wind_speed_10m,wind_direction_10m,pressure_msl,visibility,cloud_cover&hourly=temperature_2m,weather_code,precipitation_probability,wind_speed_10m&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max,sunrise,sunset,uv_index_max&timezone=auto&forecast_days=15&past_days=1`;
                     
                     const weatherRes = await fetch(weatherUrl);
                     const weatherData = await weatherRes.json();
@@ -823,11 +823,7 @@
                     const hourlyIndex = weatherData.hourly.time.findIndex(t => t.startsWith(currentHourStr));
                     const startIndex = hourlyIndex !== -1 ? hourlyIndex : 0;
 
-                    // 昨日の同時刻のインデックス (過去1日分データがあるので、現在は24時間後にあるはず。startIndexは昨日からの通算)
-                    // past_days=1 なので、hourly配列の0番目は昨日の0時。
-                    // 今日がN日なら、hourlyのデータは N-1日 00:00 から始まる。
-                    // startIndex は "今の時間" を指している。
-                    // 昨日の同時刻は startIndex - 24。
+                    // 昨日の同時刻のインデックス
                     const yesterdayIndex = startIndex - 24;
                     const yesterdayTemp = (yesterdayIndex >= 0) ? weatherData.hourly.temperature_2m[yesterdayIndex] : null;
 
@@ -837,13 +833,14 @@
                         temperature: weatherData.hourly.temperature_2m.slice(startIndex, startIndex + 72),
                         weathercode: weatherData.hourly.weather_code.slice(startIndex, startIndex + 72),
                         precipitation: weatherData.hourly.precipitation_probability.slice(startIndex, startIndex + 72),
+                        windspeed: weatherData.hourly.wind_speed_10m.slice(startIndex, startIndex + 72), // 追加
                     };
 
                     setWeatherData({
                         city: cityName,
-                        rawName: rawName || cityName, // 検索用の名前を保存
+                        rawName: rawName || cityName,
                         yesterday: {
-                            temperature: yesterdayTemp // 昨日の気温
+                            temperature: yesterdayTemp
                         },
                         current: {
                             time: weatherData.current.time,
@@ -855,7 +852,7 @@
                             apparent_temp: weatherData.current.apparent_temperature,
                             pressure: weatherData.current.pressure_msl, 
                             visibility: weatherData.current.visibility,
-                            cloud_cover: weatherData.current.cloud_cover // 雲量
+                            cloud_cover: weatherData.current.cloud_cover
                         },
                         daily: weatherData.daily,
                         hourly: hourlySlice,
@@ -934,7 +931,6 @@
                 let cityParam = params.get('city');
 
                 if (cityParam) {
-                    // カンマが含まれている場合、最初の部分だけを使う（共有リンク対策）
                     if (cityParam.includes(',')) {
                         cityParam = cityParam.split(',')[0].trim();
                     }
@@ -951,7 +947,6 @@
             const handleShare = () => {
                 if (!weatherData) return;
                 const url = new URL(window.location.href);
-                // rawNameがあればそれを優先、なければcityを使用
                 const shareName = weatherData.rawName || weatherData.city.split(',')[0].trim();
                 url.searchParams.set('city', shareName);
                 const textArea = document.createElement("textarea");
@@ -1025,7 +1020,6 @@
             const dailyAdvice = weatherData ? getDailyAdvice(weatherData.current) : "";
             const lifeIndices = weatherData ? getLifeIndices(weatherData.current) : null;
             
-            // 前日差の計算
             const tempDiff = weatherData && weatherData.yesterday && weatherData.yesterday.temperature !== null
                 ? (weatherData.current.temperature - weatherData.yesterday.temperature).toFixed(1)
                 : null;
@@ -1317,7 +1311,7 @@
                                             ))}
                                         </div>
 
-                                        {/* Hourly Graph (Updated Temp Only with Numbers) */}
+                                        {/* Hourly Graph (Updated Temp Only with Numbers and Wind Icon) */}
                                         <div className="mb-6 px-4 md:px-6">
                                             <div className="bg-black/10 rounded-3xl p-4 border border-white/10 hover:bg-black/20 transition-colors">
                                                 <h3 className="text-white/60 text-xs font-black mb-3 flex items-center"><Clock className="w-4 h-4 mr-1 text-blue-300" /> 72時間気温 & 降水確率</h3>
@@ -1326,7 +1320,15 @@
                                                     {weatherData.hourly.time.map((t, i) => (
                                                         <div key={i} className="flex flex-col items-center flex-shrink-0 space-y-2 min-w-[3.5rem]">
                                                             <span className="text-[10px] text-white/70">{formatTimeShort(t)}</span>
-                                                            <div className="w-8 h-8 transform hover:scale-110 transition-transform">{getWeatherIcon(weatherData.hourly.weathercode[i]).icon}</div>
+                                                            {/* 天気アイコンと強風マーク */}
+                                                            <div className="w-8 h-8 transform hover:scale-110 transition-transform relative">
+                                                                {getWeatherIcon(weatherData.hourly.weathercode[i]).icon}
+                                                                {weatherData.hourly.windspeed[i] >= 13 && (
+                                                                    <div className="absolute -top-2 -right-2 bg-orange-500 rounded-full p-1 shadow-md border border-white/20 z-10" title={`風速 ${Math.round(weatherData.hourly.windspeed[i])} km/h`}>
+                                                                        <Wind className="w-2 h-2 text-white" />
+                                                                    </div>
+                                                                )}
+                                                            </div>
                                                             <span className="text-xs font-bold text-white">{Math.round(weatherData.hourly.temperature[i])}°</span>
                                                             <div className="flex items-center justify-center bg-blue-500/20 text-blue-200 text-[10px] font-bold px-2 py-0.5 rounded-full">
                                                                 <Umbrella className="w-2.5 h-2.5 mr-0.5" />

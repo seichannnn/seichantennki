@@ -11,13 +11,13 @@
     <!-- Leaflet CSS (地図用) -->
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
     
-    <!-- React, ReactDOM, and Lucide Icons via Import Map -->
+    <!-- React, ReactDOM, and Lucide Icons via Import Map (バージョンを更新) -->
     <script type="importmap">
     {
         "imports": {
             "react": "https://esm.sh/react@18.2.0",
             "react-dom/client": "https://esm.sh/react-dom@18.2.0/client",
-            "lucide-react": "https://esm.sh/lucide-react@0.263.1"
+            "lucide-react": "https://esm.sh/lucide-react@0.344.0"
         }
     }
     </script>
@@ -104,7 +104,7 @@
         .animate-slide-up {
             animation: slide-up 0.3s ease-out forwards;
         }
-        /* 波紋アニメーション（音声再生時） */
+        /* 波紋アニメーション */
         @keyframes ping-slow {
             75%, 100% { transform: scale(2); opacity: 0; }
         }
@@ -161,16 +161,42 @@
     <script type="text/babel" data-type="module">
         import React, { useState, useEffect, useRef } from 'react';
         import { createRoot } from 'react-dom/client';
-        import { Search, Wind, MapPin, Calendar, Sun, Cloud, CloudRain, CloudSnow, CloudLightning, CloudFog, Loader2, Thermometer, LocateFixed, Droplets, User, Star, X, Sparkles, Map as MapIcon, CloudRain as RadarIcon, Play, Pause, Umbrella, Sunrise, Sunset, Clock, ArrowUp, ArrowDown, AlertTriangle, Share2, Check, Navigation, Shirt, Activity, Gauge, Eye, Volume2, VolumeX, Mic, MicOff, MessageSquare, Moon, Globe, Layers, Mountain, Settings, History, HelpCircle, TrendingUp, TrendingDown, Minus } from 'lucide-react';
+        import { Search, Wind, MapPin, Calendar, Sun, Cloud, CloudRain, CloudSnow, CloudLightning, CloudFog, Loader2, Thermometer, LocateFixed, Droplets, User, Star, X, Sparkles, Map as MapIcon, CloudRain as RadarIcon, Play, Pause, Umbrella, Sunrise, Sunset, Clock, ArrowUp, ArrowDown, AlertTriangle, Share2, Check, Navigation, Shirt, Activity, Gauge, Eye, Volume2, VolumeX, Mic, MicOff, MessageSquare, Moon, Globe, Layers, Mountain, Settings, History, HelpCircle, TrendingUp, TrendingDown, Minus, CloudHail } from 'lucide-react';
 
         // --- 天候エフェクトコンポーネント ---
         const WeatherEffects = ({ weathercode }) => {
             const isRain = [51, 53, 55, 61, 63, 65, 80, 81, 82, 95, 96, 99].includes(weathercode);
             const isSnow = [71, 73, 75, 77, 85, 86].includes(weathercode);
+            const isSleet = [56, 57, 66, 67].includes(weathercode); // みぞれ
+
+            if (isSleet) {
+                 return (
+                    <div className="sleet overflow-hidden h-full w-full absolute top-0 left-0 pointer-events-none z-0">
+                        {[...Array(30)].map((_, i) => (
+                            <div key={`rain-${i}`} className="rain-drop" style={{
+                                left: `${Math.random() * 100}%`,
+                                animationDuration: `${0.5 + Math.random() * 0.5}s`,
+                                animationDelay: `${Math.random() * 2}s`,
+                                opacity: 0.4
+                            }}></div>
+                        ))}
+                        {[...Array(20)].map((_, i) => (
+                            <div key={`snow-${i}`} className="snow-flake" style={{
+                                left: `${Math.random() * 100}%`,
+                                width: `${4 + Math.random() * 4}px`,
+                                height: `${4 + Math.random() * 4}px`,
+                                animationDuration: `${2 + Math.random() * 3}s`,
+                                animationDelay: `${Math.random() * 4}s`,
+                                opacity: 0.6
+                            }}></div>
+                        ))}
+                    </div>
+                );
+            }
 
             if (isRain) {
                 return (
-                    <div className="rain overflow-hidden h-full w-full absolute top-0 left-0">
+                    <div className="rain overflow-hidden h-full w-full absolute top-0 left-0 z-0">
                         {[...Array(50)].map((_, i) => (
                             <div key={i} className="rain-drop" style={{
                                 left: `${Math.random() * 100}%`,
@@ -183,7 +209,7 @@
             }
             if (isSnow) {
                 return (
-                    <div className="snow overflow-hidden h-full w-full absolute top-0 left-0">
+                    <div className="snow overflow-hidden h-full w-full absolute top-0 left-0 z-0">
                         {[...Array(30)].map((_, i) => (
                             <div key={i} className="snow-flake" style={{
                                 left: `${Math.random() * 100}%`,
@@ -212,9 +238,9 @@
             const [isPlaying, setIsPlaying] = useState(false);
             const [apiHost, setApiHost] = useState('https://tile.cache.rainviewer.com');
             const [isForecast, setIsForecast] = useState(false);
-            const [mapType, setMapType] = useState('radar');
-            const [baseMap, setBaseMap] = useState('standard');
-            const [radarColor, setRadarColor] = useState(1);
+            
+            const [baseMap, setBaseMap] = useState('standard'); 
+            const [radarColor, setRadarColor] = useState(1); 
             const [radarSmooth, setRadarSmooth] = useState(true);
             const [radarSnow, setRadarSnow] = useState(false);
             const [isMenuOpen, setIsMenuOpen] = useState(false);
@@ -306,7 +332,7 @@
                 if (!frame) return;
 
                 const isFuture = currentFrameIndex >= pastCount;
-                setIsForecast(isForecast);
+                setIsForecast(isFuture);
 
                 if (radarLayerRef.current) {
                     mapInstanceRef.current.removeLayer(radarLayerRef.current);
@@ -513,8 +539,8 @@
             const [error, setError] = useState(null);
             const [searchTerm, setSearchTerm] = useState('');
             const [favorites, setFavorites] = useState([]);
-            const [searchHistory, setSearchHistory] = useState([]); // 検索履歴
-            const [suggestions, setSuggestions] = useState([]); // 検索候補
+            const [searchHistory, setSearchHistory] = useState([]); 
+            const [suggestions, setSuggestions] = useState([]); 
             const [viewMode, setViewMode] = useState('weather');
             const [coords, setCoords] = useState({ lat: 35.6895, lon: 139.6917 });
             const [shareToast, setShareToast] = useState(false);
@@ -530,7 +556,7 @@
 
             const updateSearchHistory = (newCity) => {
                 let newHistory = [newCity, ...searchHistory.filter(c => c !== newCity)];
-                if (newHistory.length > 5) newHistory = newHistory.slice(0, 5); // 最大5件
+                if (newHistory.length > 5) newHistory = newHistory.slice(0, 5); 
                 setSearchHistory(newHistory);
                 localStorage.setItem('weatherAppSearchHistory', JSON.stringify(newHistory));
             };
@@ -539,6 +565,10 @@
                 if (code === 0) return { icon: <Sun className="w-full h-full text-yellow-300 animate-spin-slow drop-shadow-md" />, label: '快晴', bg: 'from-orange-400 via-amber-300 to-yellow-200', text: 'text-yellow-100' };
                 if (code >= 1 && code <= 3) return { icon: <Cloud className="w-full h-full text-white drop-shadow-md" />, label: '晴れ/曇り', bg: 'from-blue-400 via-sky-300 to-indigo-100', text: 'text-white' };
                 if (code >= 45 && code <= 48) return { icon: <CloudFog className="w-full h-full text-gray-100 drop-shadow-md" />, label: '霧', bg: 'from-gray-600 via-slate-400 to-gray-200', text: 'text-gray-100' };
+                
+                // みぞれ判定 (追加)
+                if ([56, 57, 66, 67].includes(code)) return { icon: <CloudHail className="w-full h-full text-blue-100 drop-shadow-md" />, label: 'みぞれ', bg: 'from-slate-400 via-blue-300 to-slate-200', text: 'text-blue-900' };
+
                 if (code >= 51 && code <= 67) return { icon: <CloudRain className="w-full h-full text-blue-200 drop-shadow-md" />, label: '雨', bg: 'from-blue-800 via-blue-600 to-cyan-500', text: 'text-blue-100' };
                 if (code >= 71 && code <= 77) return { icon: <CloudSnow className="w-full h-full text-white drop-shadow-md" />, label: '雪', bg: 'from-indigo-500 via-purple-400 to-pink-200', text: 'text-white' };
                 if (code >= 80 && code <= 82) return { icon: <CloudRain className="w-full h-full text-blue-300 drop-shadow-md" />, label: 'にわか雨', bg: 'from-sky-700 via-blue-500 to-sky-300', text: 'text-sky-100' };
